@@ -34,13 +34,22 @@ LEGEND_NAMES = {
 # Maps model identifiers to colors (use hex codes or named colors)
 # If a model is not in this dict, it will use the default color palette
 MODEL_COLORS = {
+    # GreedyAC variants
     'GreedyAC_expectile_True_0.8_v': '#1f77b4',  # Blue
     'GreedyAC_expectile_True_0.9_v': '#ff7f0e',  # Orange
+    'GreedyAC_expectile_True_0.7_v': '#2ca02c',  # Green
     'GreedyAC_expectile_False_0.5_v': '#d62728',  # Red
     'GreedyAC_expectile_False_0.9_v': '#d62728',  # Red
-    'GreedyAC_expectile_True_0.7_v': '#2ca02c',  # Green
     'GreedyAC': '#8c564b',  # Brown
-    'SAC': '#e377c2',  # Pink
+
+    # SAC variants
+    'SAC_expectile_True_0.8_v': '#9467bd',  # Purple
+    'SAC_expectile_True_0.9_v': '#e377c2',  # Pink
+    'SAC_expectile_True_0.7_v': '#17becf',  # Cyan
+    'SAC_expectile_False_0.5_v': '#bcbd22',  # Yellow-green
+    'SAC': '#e377c2',  # Pink (default SAC)
+
+    # Other baselines
     'VAC': '#7f7f7f',  # Gray
     # Add more custom colors here as needed
     # Example:
@@ -225,15 +234,44 @@ def plot_evaluation_rewards(models_data, save_path="./evaluation_rewards.png",
             except:
                 pass
 
-    # Academic paper style
-    plt.style.use('seaborn-v0_8-paper')
-    fig, ax = plt.subplots(figsize=(10, 6))
+    # Configure matplotlib for RL publication plots (NeurIPS/ICML/ICLR style)
+    plt.rcParams.update({
+        'font.family': 'sans-serif',
+        'font.sans-serif': ['Arial', 'DejaVu Sans', 'Liberation Sans'],
+        'font.size': 12,
+        'axes.labelsize': 14,
+        'axes.titlesize': 16,
+        'xtick.labelsize': 12,
+        'ytick.labelsize': 12,
+        'legend.fontsize': 11,
+        'lines.linewidth': 2.5,
+        'axes.linewidth': 1.0,
+        'grid.linewidth': 0.6,
+        'savefig.dpi': 300,
+        'savefig.bbox': 'tight',
+        'savefig.pad_inches': 0.1,
+    })
 
-    # Professional color palette
-    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
-              '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
+    # Standard RL paper figure size - wider aspect ratio works better for learning curves
+    fig_width = 6.0  # Slightly smaller for better fit in papers
+    fig_height = 4.0  # 3:2 aspect ratio common in RL papers
+    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
 
-    for idx, (model_name, runs) in enumerate(models_data.items()):
+    # Colorblind-friendly palette used in many RL papers (based on seaborn deep)
+    colors = ['#4C72B0', '#DD8452', '#55A868', '#C44E52', '#8172B3',
+              '#937860', '#DA8BC3', '#8C8C8C', '#CCB974', '#64B5CD']
+
+    # Create consistent color mapping for all models
+    all_model_names = sorted(models_data.keys())
+    color_map = {}
+    for i, name in enumerate(all_model_names):
+        # Check if custom color is defined, otherwise use palette
+        if name in MODEL_COLORS:
+            color_map[name] = MODEL_COLORS[name]
+        else:
+            color_map[name] = colors[i % len(colors)]
+
+    for model_name, runs in models_data.items():
         print(f"\nProcessing model: {model_name} with {len(runs)} run(s)")
 
         # Check if evaluation data exists
@@ -295,39 +333,47 @@ def plot_evaluation_rewards(models_data, save_path="./evaluation_rewards.png",
         # Get display name from legend names dictionary
         display_name = LEGEND_NAMES.get(model_name, model_name)
 
-        # Get color for this model (use custom color if specified, otherwise use default palette)
-        color = MODEL_COLORS.get(model_name, colors[idx % len(colors)])
+        # Get color for this model (consistent across environments)
+        color = color_map[model_name]
 
-        # Plot mean line
-        label = f"{display_name}" if n_runs == 1 else f"{display_name} (n={n_runs})"
+        # Plot mean line (RL papers typically use solid lines without markers)
+        label = display_name
         ax.plot(mean_timesteps, mean_rewards, label=label, color=color,
-                linewidth=2.0, marker='o', markersize=3,
-                markevery=max(1, len(mean_timesteps)//10))
+                linewidth=2.5, linestyle='-', alpha=0.9, zorder=2)
 
-        # Add shaded error region if multiple runs
+        # Add shaded error region if multiple runs (standard in RL papers)
         if show_std and n_runs > 1:
             ax.fill_between(mean_timesteps,
                            mean_rewards - stderr_rewards,
                            mean_rewards + stderr_rewards,
-                           alpha=0.2, color=color)
+                           alpha=0.2, color=color, linewidth=0, zorder=1)
 
         print(f"  Plotted: {len(mean_timesteps)} evaluation points, "
-              f"final reward: {mean_rewards[-1]:.2f} ± {stderr_rewards[-1]:.2f}")
+              f"final reward: {mean_rewards[-1]:.2f} ± {stderr_rewards[-1]:.2f} (n={n_runs})")
 
-    # Academic paper styling
-    ax.set_xlabel('Timesteps', fontsize=14)
-    ax.set_ylabel('Evaluation Return', fontsize=14)
-    ax.set_title(env_name, fontsize=16, fontweight='bold')
-    ax.tick_params(labelsize=12)
-    ax.legend(loc='lower right', fontsize=11, framealpha=0.95)
-    ax.grid(True, alpha=0.3, linestyle='-', linewidth=0.5)
+    # Clean tick styling
+    ax.tick_params(axis='both', which='major', labelsize=12, length=5, width=1)
+
+    # No grid
+    ax.grid(False)
+
+    # Remove top and right spines (cleaner look)
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
+    ax.spines['left'].set_linewidth(1.0)
+    ax.spines['bottom'].set_linewidth(1.0)
 
     plt.tight_layout()
-    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    plt.savefig(save_path, dpi=300, bbox_inches='tight', pad_inches=0.1)
+    # Also save as PDF for LaTeX inclusion
+    pdf_path = save_path.replace('.png', '.pdf')
+    plt.savefig(pdf_path, bbox_inches='tight', pad_inches=0.1)
     print(f"\nEvaluation rewards plot saved to: {save_path}")
+    print(f"PDF version saved to: {pdf_path}")
     plt.close()
+
+    # Reset rcParams to default
+    plt.rcParams.update(plt.rcParamsDefault)
 
 
 def plot_training_rewards(models_data, save_path="./training_rewards.png",
@@ -362,15 +408,44 @@ def plot_training_rewards(models_data, save_path="./training_rewards.png",
             except:
                 pass
 
-    # Academic paper style
-    plt.style.use('seaborn-v0_8-paper')
-    fig, ax = plt.subplots(figsize=(10, 6))
+    # Configure matplotlib for RL publication plots (NeurIPS/ICML/ICLR style)
+    plt.rcParams.update({
+        'font.family': 'sans-serif',
+        'font.sans-serif': ['Arial', 'DejaVu Sans', 'Liberation Sans'],
+        'font.size': 12,
+        'axes.labelsize': 14,
+        'axes.titlesize': 16,
+        'xtick.labelsize': 12,
+        'ytick.labelsize': 12,
+        'legend.fontsize': 11,
+        'lines.linewidth': 2.5,
+        'axes.linewidth': 1.0,
+        'grid.linewidth': 0.6,
+        'savefig.dpi': 300,
+        'savefig.bbox': 'tight',
+        'savefig.pad_inches': 0.1,
+    })
 
-    # Professional color palette
-    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
-              '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
+    # Standard RL paper figure size - wider aspect ratio works better for learning curves
+    fig_width = 6.0  # Slightly smaller for better fit in papers
+    fig_height = 4.0  # 3:2 aspect ratio common in RL papers
+    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
 
-    for idx, (model_name, runs) in enumerate(models_data.items()):
+    # Colorblind-friendly palette used in many RL papers (based on seaborn deep)
+    colors = ['#4C72B0', '#DD8452', '#55A868', '#C44E52', '#8172B3',
+              '#937860', '#DA8BC3', '#8C8C8C', '#CCB974', '#64B5CD']
+
+    # Create consistent color mapping for all models
+    all_model_names = sorted(models_data.keys())
+    color_map = {}
+    for i, name in enumerate(all_model_names):
+        # Check if custom color is defined, otherwise use palette
+        if name in MODEL_COLORS:
+            color_map[name] = MODEL_COLORS[name]
+        else:
+            color_map[name] = colors[i % len(colors)]
+
+    for model_name, runs in models_data.items():
         print(f"\nProcessing model: {model_name} with {len(runs)} run(s)")
 
         # Find the maximum timesteps across all runs to create common grid
@@ -425,38 +500,47 @@ def plot_training_rewards(models_data, save_path="./training_rewards.png",
         # Get display name from legend names dictionary
         display_name = LEGEND_NAMES.get(model_name, model_name)
 
-        # Get color for this model (use custom color if specified, otherwise use default palette)
-        color = MODEL_COLORS.get(model_name, colors[idx % len(colors)])
+        # Get color for this model (consistent across environments)
+        color = color_map[model_name]
 
-        # Plot mean line
-        label = f"{display_name}" if n_runs == 1 else f"{display_name} (n={n_runs})"
+        # Plot mean line (RL papers typically use solid lines without markers)
+        label = display_name
         ax.plot(timesteps_plot, mean_rewards, label=label, color=color,
-                linewidth=2.0)
+                linewidth=2.5, linestyle='-', alpha=0.9, zorder=2)
 
-        # Add shaded error region if multiple runs
+        # Add shaded error region if multiple runs (standard in RL papers)
         if show_std and n_runs > 1:
             ax.fill_between(timesteps_plot,
                            mean_rewards - stderr_rewards,
                            mean_rewards + stderr_rewards,
-                           alpha=0.2, color=color)
+                           alpha=0.2, color=color, linewidth=0, zorder=1)
 
         print(f"  Plotted: {len(timesteps_plot)} points, "
-              f"final reward: {mean_rewards[-1]:.2f} ± {stderr_rewards[-1]:.2f}")
+              f"final reward: {mean_rewards[-1]:.2f} ± {stderr_rewards[-1]:.2f} (n={n_runs})")
 
-    # Academic paper styling
-    ax.set_xlabel('Timesteps', fontsize=14)
-    ax.set_ylabel('Episode Return', fontsize=14)
-    ax.set_title(env_name, fontsize=16, fontweight='bold')
-    ax.tick_params(labelsize=12)
-    ax.legend(loc='lower right', fontsize=11, framealpha=0.95)
-    ax.grid(True, alpha=0.3, linestyle='-', linewidth=0.5)
+    # Clean tick styling
+    ax.tick_params(axis='both', which='major', labelsize=12, length=5, width=1)
+
+    # No grid
+    ax.grid(False)
+
+    # Remove top and right spines (cleaner look)
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
+    ax.spines['left'].set_linewidth(1.0)
+    ax.spines['bottom'].set_linewidth(1.0)
 
     plt.tight_layout()
-    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    plt.savefig(save_path, dpi=300, bbox_inches='tight', pad_inches=0.1)
+    # Also save as PDF for LaTeX inclusion
+    pdf_path = save_path.replace('.png', '.pdf')
+    plt.savefig(pdf_path, bbox_inches='tight', pad_inches=0.1)
     print(f"\nTraining rewards plot saved to: {save_path}")
+    print(f"PDF version saved to: {pdf_path}")
     plt.close()
+
+    # Reset rcParams to default
+    plt.rcParams.update(plt.rcParamsDefault)
 
 
 def print_summary_statistics(models_data):
