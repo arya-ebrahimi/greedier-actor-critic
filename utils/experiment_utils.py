@@ -120,6 +120,8 @@ def create_agent(agent, config):
             reparameterized=config["reparameterized"],
             double_q=config["double_q"],
             num_samples=config["num_samples"],
+            expectile=config["expectile"],
+            use_expectile=config["use_expectile"]
         )
 
     # Discrete Soft Actor-Critic

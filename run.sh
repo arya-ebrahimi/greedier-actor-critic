@@ -1,8 +1,12 @@
 #!/bin/bash
 
+# Set MuJoCo environment variables
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$HOME/.mujoco/mujoco210/bin:/usr/lib/nvidia
+export MUJOCO_PY_MUJOCO_PATH=$HOME/.mujoco/mujoco210
+
 # Configuration
-ENV_CONFIG="config/environment/PendulumContinuous-v0.json"
-AGENT_CONFIG="config/agent/GreedyAC.json"
+ENV_CONFIG="config/environment/HalfCheetah-v3.json"
+AGENT_CONFIG="config/agent/SAC.json"
 START_INDEX=1
 END_INDEX=25
 SAVE_DIR="./results"

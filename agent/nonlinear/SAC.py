@@ -7,6 +7,8 @@ from agent.baseAgent import BaseAgent
 import agent.nonlinear.nn_utils as nn_utils
 from agent.nonlinear.policy.MLP import SquashedGaussian, Gaussian
 from agent.nonlinear.value_function.MLP import DoubleQ, Q
+from agent.nonlinear.value_function.MLP import V as VMLP
+
 from utils.experience_replay import TorchBuffer as ExperienceReplay
 import inspect
 
@@ -20,6 +22,7 @@ class SAC(BaseAgent):
         self,
         gamma,
         tau,
+        expectile,
         alpha,
         policy,
         target_update_interval,
@@ -43,6 +46,8 @@ class SAC(BaseAgent):
         clip_stddev=1000,
         init=None,
         activation="relu",
+        use_expectile=False,
+        
     ):
         """
         Constructor
@@ -144,6 +149,9 @@ class SAC(BaseAgent):
         self._torch_rng = torch.manual_seed(seed)
         self._rng = np.random.default_rng(seed)
 
+        self.use_expectile = use_expectile
+        self.expectile = expectile
+
         # Random hypers and fields
         self._is_training = True
         self._gamma = gamma
@@ -174,6 +182,10 @@ class SAC(BaseAgent):
 
         if self._automatic_entropy_tuning and self._alpha_lr <= 0:
             raise ValueError("should not use entropy lr <= 0")
+        
+        if self.use_expectile:
+            self.value = VMLP(obs_space, critic_hidden_dim, init, activation)
+            self.value_optim = Adam(self.value.parameters(), lr=critic_lr, betas=betas)
 
         # Set up the critic and target critic
         self._init_critic(
@@ -226,6 +238,11 @@ class SAC(BaseAgent):
             action = self._policy.rsample(state)[3]
 
         return action.detach().cpu().numpy()[0]
+
+
+    def expectile_loss(self, diff, expectile):
+        # Compute the expectile loss
+        return torch.mean(torch.where(diff < 0, expectile * diff ** 2, (1 - expectile) * diff ** 2))
 
     def update(self, state, action, reward, next_state, done_mask):
         # Keep transition in replay buffer
@@ -524,7 +541,19 @@ class SAC(BaseAgent):
         if not self._double_q:
             raise ValueError("cannot call _update_single_critic when using " +
                              "a double Q critic")
+            
+        if self.use_expectile:
+            with torch.no_grad():
+                # Sample an action in the next state for the SARSA update
+                q1, q2 = self._critic_target(next_state_batch, next_state_action)
+            v = self.value(state_batch)
+            q = torch.min(q1, q2)
+            v_loss = self.expectile_loss(q - v, self.expectile)
 
+            self.value_optim.zero_grad()
+            v_loss.backward()
+            self.value_optim.step()
+            
         # When updating Q functions, we don't want to backprop through the
         # policy and target network parameters
         with torch.no_grad():
@@ -538,14 +567,17 @@ class SAC(BaseAgent):
 
             # Double Q: target uses the minimum of the two computed action
             # values
-            min_next_q = torch.min(next_q1, next_q2)
+            if self.use_expectile:
+                next_q = self.value(next_state_batch)
+            else:
+                next_q = torch.min(next_q1, next_q2)
 
             # If using soft action value functions, then adjust the target
-            if self._soft_q:
-                min_next_q -= self._alpha * next_state_log_pi
+                if self._soft_q:
+                    next_q -= self._alpha * next_state_log_pi
 
             # Calculate the target for the action value function update
-            q_target = reward_batch + mask_batch * self._gamma * min_next_q
+            q_target = reward_batch + mask_batch * self._gamma * next_q
 
         # Calculate the two Q values of each action in each respective state
         q1, q2 = self._critic(state_batch, action_batch)
